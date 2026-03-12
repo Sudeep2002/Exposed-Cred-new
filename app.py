@@ -1,124 +1,73 @@
 import json
 import os
-from typing import Optional
 import pandas as pd
 
-from Chains.intent_classifier import intent_chain, analysis_chain
-from Chains.response_formatter import formatter_chain
-from Backend.loader import load_current_batch, load_master_data
-from Backend.rules import (
-    calculate_password_reset_candidates,
-    get_exposure_breakdown_by_source,
-    get_password_reset_count,
-    get_recently_exposed_users,
-)
+# We drop intent_chain and formatter_chain entirely! Only use analysis_chain.
+from Chains.intent_classifier import analysis_chain
+from Backend.rules import calculate_password_reset_candidates
 
 DATA_DIR = "Data"
 CACHE_PATH = os.path.join(DATA_DIR, "format_cache.json")
 
-def _load_format_cache() -> dict:
-    try:
-        with open(CACHE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-def _save_format_cache(cache: dict) -> None:
-    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
-
-def _local_format(text: str) -> str:
-    return f"--- Report ---\n{text.strip()}\n--- End ---"
-
-def get_raw_output_for_intent(intent: str, current_df: pd.DataFrame, master_df: pd.DataFrame) -> Optional[str]:
-    if intent == "RESET_COUNT":
-        return f"Users needing password reset: {get_password_reset_count(current_df, master_df)}"
-    if intent == "RESET_LIST":
-        return calculate_password_reset_candidates(current_df, master_df).to_string(index=False)
-    if intent == "RECENT_EXPOSED_COUNT":
-        df = get_recently_exposed_users(current_df, master_df)
-        return f"Recently exposed users count: {len(df)}"
-    if intent == "RECENT_EXPOSED_LIST":
-        return get_recently_exposed_users(current_df, master_df).to_string(index=False)
-    if intent == "SOURCE_BREAKDOWN":
-        df = get_recently_exposed_users(current_df, master_df)
-        return str(get_exposure_breakdown_by_source(df))
-    return None
-
-def handle_generic_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame) -> str:
-    """Smart analysis combining keyword intent filtering and LLM generation."""
-    query_lower = user_query.lower()
+def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame, **kwargs) -> str:
+    """
+    Pure dynamic context generation engine. 
+    No rigid intents - we just calculate the exact math and let the LLM answer.
+    """
     
-    # Extract intents
-    wants_count = any(k in query_lower for k in ["how many", "count", "total", "number of"])
-    wants_reset = any(k in query_lower for k in ["reset", "password"])
-    wants_exposed = any(k in query_lower for k in ["exposed", "recent", "exposure"])
+    # 1. Detect and Filter by Source
+    sources = set(current_df["source"].dropna().unique()) | set(master_df["source"].dropna().unique())
+    sorted_sources = sorted([str(s) for s in sources if str(s).strip()], key=len, reverse=True)
     
-    # Defaults
-    if wants_reset and not wants_exposed: wants_exposed = False
-    elif wants_exposed and not wants_reset: wants_reset = False
-    else: wants_reset = wants_exposed = True
-
-    # Build Context
-    context = [f"Current batch: {len(current_df)} records", f"Master data: {len(master_df)} records"]
-    
-    if wants_reset:
-        resets = calculate_password_reset_candidates(current_df, master_df)
-        context.append(f"\nReset Candidates ({len(resets)}):\n{resets[['email']].head(20).to_string(index=False)}")
-    if wants_exposed:
-        exposed = get_recently_exposed_users(current_df, master_df)
-        if "source" in exposed.columns:
-            context.append(f"\nRecently Exposed ({len(exposed)}):\n{exposed[['email', 'source']].head(20).to_string(index=False)}")
-        else:
-            context.append(f"\nRecently Exposed ({len(exposed)}):\n{exposed[['email']].head(20).to_string(index=False)}")
-
-    prompt = f"Answer this question ONLY based on the provided data:\nData:\n{chr(10).join(context)}\n\nQuestion: {user_query}\n\nBe concise and factual."
-    
-    try:
-        return analysis_chain.invoke({"data": prompt, "query": user_query}).strip()
-    except Exception as e:
-        return f"Error processing query: {str(e)}"
-
-def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame, use_llm_formatter: bool = False, task_name: str = None) -> str:
-    """Core function to route query execution based dynamically on the user's prompt."""
-    
-    # --- CRITICAL FIX: PRE-FILTER BY SOURCE ---
-    # We must filter the dataframes down to the specific source BEFORE passing them to the math functions!
-    if "source" in current_df.columns and "source" in master_df.columns:
-        sources = set(current_df["source"].dropna().unique()) | set(master_df["source"].dropna().unique())
-        sorted_sources = sorted([str(s) for s in sources if str(s).strip()], key=len, reverse=True)
-        
-        detected_source = next((s for s in sorted_sources if s.upper() in user_query.upper()), None)
-        
-        if detected_source:
-            current_df = current_df[current_df["source"].astype(str).str.upper() == detected_source.upper()]
-            master_df = master_df[master_df["source"].astype(str).str.upper() == detected_source.upper()]
-    # ------------------------------------------
-
-    try:
-        intent_out = intent_chain.invoke({"query": user_query}).strip().upper()
-        valid_intents = {"RESET_COUNT", "RESET_LIST", "RECENT_EXPOSED_COUNT", "RECENT_EXPOSED_LIST", "SOURCE_BREAKDOWN"}
-        intent = next((t for t in valid_intents if t in intent_out), "UNKNOWN")
-    except Exception:
-        intent = "UNKNOWN"
-
-    if intent != "UNKNOWN":
-        raw = get_raw_output_for_intent(intent, current_df, master_df)
-        if raw is not None:
-            if use_llm_formatter:
-                try:
-                    # Make sure the formatter knows WHAT question it is answering
-                    return formatter_chain.invoke({"data": raw, "query": user_query})
-                except Exception:
-                    return raw
+    detected_source = None
+    for s in sorted_sources:
+        # Simple check if the source name appears in the user's query
+        if s.lower() in user_query.lower():
+            detected_source = s
+            break
             
-            cache = _load_format_cache()
-            if task_name and task_name in cache: return cache[task_name]
-            return _local_format(raw)
+    filtered_curr = current_df
+    filtered_mast = master_df
+    
+    if detected_source:
+        # Apply strict filter to dataframes
+        filtered_curr = current_df[current_df["source"].astype(str).str.lower() == detected_source.lower()]
+        filtered_mast = master_df[master_df["source"].astype(str).str.lower() == detected_source.lower()]
 
-    # Fallback to smart generic query if the specific intents aren't hit
-    return handle_generic_query(user_query, current_df, master_df)
+    # 2. Pre-calculate EXACT statistics
+    resets_df = calculate_password_reset_candidates(filtered_curr, filtered_mast)
+    reset_count = len(resets_df)
+    reset_emails = resets_df["email"].tolist() if reset_count > 0 else []
+    
+    curr_breakdown = filtered_curr["source"].value_counts().to_dict()
+    mast_breakdown = filtered_mast["source"].value_counts().to_dict()
+
+    # 3. Build a strict, undeniable context payload for the LLM
+    context = []
+    if detected_source:
+        context.append(f"FILTER APPLIED: Showing data ONLY for source '{detected_source}'")
+    else:
+        context.append("FILTER: None (Showing all data)")
+        
+    context.append(f"\n--- CURRENT BATCH STATS ---")
+    context.append(f"Total Exposures in Current Batch: {len(filtered_curr)}")
+    context.append(f"Current Batch Source Breakdown: {curr_breakdown}")
+    context.append(f"Password Resets Needed (Current users NOT in recent master data): {reset_count}")
+    
+    if reset_count > 0:
+        context.append(f"Reset Emails (first 30): {', '.join(reset_emails[:30])}")
+        
+    context.append(f"\n--- MASTER DATA STATS ---")
+    context.append(f"Total Historical Exposures: {len(filtered_mast)}")
+    context.append(f"Historical Source Breakdown: {mast_breakdown}")
+
+    prompt_data = "\n".join(context)
+    
+    # 4. Ask the LLM to answer using ONLY this context
+    try:
+        return analysis_chain.invoke({"data": prompt_data, "query": user_query}).strip()
+    except Exception as e:
+        return f"Error analyzing data: {str(e)}"
 
 if __name__ == "__main__":
-    print("Core App Engine Loaded.")
+    print("Dynamic App Engine Loaded.")
