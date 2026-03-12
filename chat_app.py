@@ -2,9 +2,8 @@
 import pandas as pd
 from io import BytesIO
 
-from app import process_query  # Directly use the unified core logic
+from app import process_query  
 from Backend.loader import load_current_batch, load_master_data
-from Backend.predefined_tasks import PREDEFINED_TASKS
 from Backend.rules import calculate_password_reset_candidates
 
 st.set_page_config(page_title="Exposed Credential Analysis", layout="wide")
@@ -38,7 +37,7 @@ def _show_reset_download_button() -> None:
 def _handle_query(user_query: str, allow_reset_download: bool) -> None:
     st.session_state.chat_history.append({"role": "user", "content": user_query})
     
-    with st.spinner("Analyzing..."):
+    with st.spinner("Analyzing data..."):
         # Centralized engine handles intent parsing, LLM calls, and rule execution
         response = process_query(
             user_query, 
@@ -74,13 +73,7 @@ if not st.session_state.uploaded_files:
 else:
     st.success("Data files loaded. You can now ask questions!")
     
-    st.markdown("**Quick questions you can ask:**")
-    cols = st.columns(3)
-    for i, (key, meta) in enumerate(PREDEFINED_TASKS.items()):
-        if cols[i % 3].button(meta["prompt"]):
-            _handle_query(meta["prompt"], allow_reset_download=("reset" in key))
-
-    user_query = st.chat_input("Ask a question about the exposed credentials...")
+    user_query = st.chat_input("Ask a question about the current batch...")
     if user_query:
         _handle_query(user_query, allow_reset_download=True)
 

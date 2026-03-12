@@ -1,12 +1,11 @@
 import json
 import os
-from typing import List, Optional, Tuple
+from typing import Optional
 import pandas as pd
 
 from Chains.intent_classifier import intent_chain, analysis_chain
 from Chains.response_formatter import formatter_chain
 from Backend.loader import load_current_batch, load_master_data
-from Backend.predefined_tasks import DEFAULT_DAILY_TASKS, get_daily_prompt_template, resolve_predefined_intent
 from Backend.rules import (
     calculate_password_reset_candidates,
     get_exposure_breakdown_by_source,
@@ -87,16 +86,13 @@ def handle_generic_query(user_query: str, current_df: pd.DataFrame, master_df: p
         return f"Error processing query: {str(e)}"
 
 def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame, use_llm_formatter: bool = False, task_name: str = None) -> str:
-    """Core function to route query execution. Used by both CLI and Streamlit."""
-    intent = resolve_predefined_intent(user_query)
-    
-    if not intent:
-        try:
-            intent_out = intent_chain.invoke({"query": user_query}).strip().upper()
-            valid_intents = {"RESET_COUNT", "RESET_LIST", "RECENT_EXPOSED_COUNT", "RECENT_EXPOSED_LIST", "SOURCE_BREAKDOWN"}
-            intent = next((t for t in valid_intents if t in intent_out), "UNKNOWN")
-        except Exception:
-            intent = "UNKNOWN"
+    """Core function to route query execution based dynamically on the user's prompt."""
+    try:
+        intent_out = intent_chain.invoke({"query": user_query}).strip().upper()
+        valid_intents = {"RESET_COUNT", "RESET_LIST", "RECENT_EXPOSED_COUNT", "RECENT_EXPOSED_LIST", "SOURCE_BREAKDOWN"}
+        intent = next((t for t in valid_intents if t in intent_out), "UNKNOWN")
+    except Exception:
+        intent = "UNKNOWN"
 
     if intent != "UNKNOWN":
         raw = get_raw_output_for_intent(intent, current_df, master_df)
@@ -113,19 +109,5 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
 
     return handle_generic_query(user_query, current_df, master_df)
 
-def run_daily_report(current_df: pd.DataFrame, master_df: pd.DataFrame, task_names=None):
-    selected = [task_names[0]] if isinstance(task_names, list) else [task_names] if task_names else [DEFAULT_DAILY_TASKS[0]]
-    report = {}
-    for task_name in selected:
-        report[task_name] = process_query(task_name, current_df, master_df, task_name=task_name)
-    return report
-
 if __name__ == "__main__":
-    print(get_daily_prompt_template())
-    print("\nDaily report output:\n")
-    
-    c_df = load_current_batch(os.path.join(DATA_DIR, "current_batch.xlsx"))
-    m_df = load_master_data(os.path.join(DATA_DIR, "master_data.xlsx"))
-    
-    for task, response in run_daily_report(c_df, m_df).items():
-        print(f"[{task}] {response}")
+    print("Core App Engine Loaded.")
