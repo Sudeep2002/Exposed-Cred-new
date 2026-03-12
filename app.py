@@ -99,7 +99,7 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
         if raw is not None:
             if use_llm_formatter:
                 try:
-                    return formatter_chain.invoke({"data": raw})
+                    return formatter_chain.invoke({"data": raw, "query": user_query})
                 except Exception:
                     return raw
             

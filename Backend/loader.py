@@ -12,4 +12,5 @@ def load_master_data(path: str) -> pd.DataFrame:
     df = pd.read_excel(path)
     df["email"] = df["Email"].str.lower().str.strip()
     df["last_exposed_date"] = pd.to_datetime(df["Date of Exposure"])
+    df["source"] = df["Source"]  # <--- THIS WAS MISSING
     return df[["email", "last_exposed_date", "source"]]

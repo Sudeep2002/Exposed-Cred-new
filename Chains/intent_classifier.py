@@ -20,11 +20,10 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{query}")
 ])
 
-# Prompt for generic data analysis
 analysis_prompt = ChatPromptTemplate.from_messages([
     ("system",
      "You are a security data analyst specializing in exposed credential analysis.\n"
-     "Your ONLY job is to answer the user's question using the provided data.\n\n"
+     "Your ONLY job is to answer the user's question using the provided context data.\n\n"
      "CRITICAL RULES:\n"
      "1. Answer ONLY based on the data provided - do NOT infer or guess\n"
      "2. For COUNT questions: respond with ONLY the number\n"
@@ -32,7 +31,7 @@ analysis_prompt = ChatPromptTemplate.from_messages([
      "4. For FILTERED queries (by source/date): count/list ONLY matching records\n"
      "5. Be concise and factual\n"
      "6. If the question cannot be answered from the data, state that clearly"),
-    ("human", "{data}")
+    ("human", "Question: {query}\n\nContext Data:\n{data}")
 ])
 
 _intent_chain = None
