@@ -2,7 +2,6 @@ import json
 import os
 import pandas as pd
 
-# We drop intent_chain and formatter_chain entirely! Only use analysis_chain.
 from Chains.intent_classifier import analysis_chain
 from Backend.rules import calculate_password_reset_candidates
 
@@ -12,7 +11,6 @@ CACHE_PATH = os.path.join(DATA_DIR, "format_cache.json")
 def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame, **kwargs) -> str:
     """
     Pure dynamic context generation engine. 
-    No rigid intents - we just calculate the exact math and let the LLM answer.
     """
     
     # 1. Detect and Filter by Source
@@ -35,7 +33,10 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
         filtered_mast = master_df[master_df["source"].astype(str).str.lower() == detected_source.lower()]
 
     # 2. Pre-calculate EXACT statistics
-    resets_df = calculate_password_reset_candidates(filtered_curr, filtered_mast)
+    # 🔥 THE CRITICAL FIX: We pass `master_df` (Global) instead of `filtered_mast` 
+    # to ensure we check recent exposures across ALL sources, not just the filtered one!
+    resets_df = calculate_password_reset_candidates(filtered_curr, master_df)
+    
     reset_count = len(resets_df)
     reset_emails = resets_df["email"].tolist() if reset_count > 0 else []
     
@@ -52,7 +53,7 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     context.append(f"\n--- CURRENT BATCH STATS ---")
     context.append(f"Total Exposures in Current Batch: {len(filtered_curr)}")
     context.append(f"Current Batch Source Breakdown: {curr_breakdown}")
-    context.append(f"Password Resets Needed (Current users NOT in recent master data): {reset_count}")
+    context.append(f"Password Resets Needed (Current users NOT in global recent master data): {reset_count}")
     
     if reset_count > 0:
         context.append(f"Reset Emails (first 30): {', '.join(reset_emails[:30])}")
