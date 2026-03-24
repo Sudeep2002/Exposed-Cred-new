@@ -1,74 +1,52 @@
-import json
-import os
 import pandas as pd
-
-from Chains.intent_classifier import analysis_chain
-from Backend.rules import calculate_password_reset_candidates
-
-DATA_DIR = "Data"
-CACHE_PATH = os.path.join(DATA_DIR, "format_cache.json")
+from langchain_ollama import OllamaLLM
+from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 
 def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame, **kwargs) -> str:
     """
-    Pure dynamic context generation engine. 
+    Autonomous Agent Engine: 
+    The AI will write its own Pandas code to find the answer!
     """
     
-    # 1. Detect and Filter by Source
-    sources = set(current_df["source"].dropna().unique()) | set(master_df["source"].dropna().unique())
-    sorted_sources = sorted([str(s) for s in sources if str(s).strip()], key=len, reverse=True)
-    
-    detected_source = None
-    for s in sorted_sources:
-        # Simple check if the source name appears in the user's query
-        if s.lower() in user_query.lower():
-            detected_source = s
-            break
-            
-    filtered_curr = current_df
-    filtered_mast = master_df
-    
-    if detected_source:
-        # Apply strict filter to dataframes
-        filtered_curr = current_df[current_df["source"].astype(str).str.lower() == detected_source.lower()]
-        filtered_mast = master_df[master_df["source"].astype(str).str.lower() == detected_source.lower()]
+    # 1. Initialize your local LLM (Using the faster llama3.2!)
+    llm = OllamaLLM(
+        model="llama3.2", 
+        base_url="http://localhost:11434",
+        temperature=0,
+        client_kwargs={"timeout": 120}
+    )
 
-    # 2. Pre-calculate EXACT statistics
-    # 🔥 THE CRITICAL FIX: We pass `master_df` (Global) instead of `filtered_mast` 
-    # to ensure we check recent exposures across ALL sources, not just the filtered one!
-    resets_df = calculate_password_reset_candidates(filtered_curr, master_df)
+    # 2. Give the agent a strict persona and instructions
+    # We pass BOTH dataframes as a list: df1 is current_batch, df2 is master_data
+    system_prefix = """
+    You are an elite Security Data Analyst. 
+    You have been given two pandas DataFrames:
+    - df1: The 'current batch' of exposed credentials (columns: email, exposure_date, source)
+    - df2: The 'master data' of historical exposures (columns: email, last_exposed_date, source)
     
-    reset_count = len(resets_df)
-    reset_emails = resets_df["email"].tolist() if reset_count > 0 else []
-    
-    curr_breakdown = filtered_curr["source"].value_counts().to_dict()
-    mast_breakdown = filtered_mast["source"].value_counts().to_dict()
+    CRITICAL RULES:
+    1. A 'Password Reset' is required IF a user is in df1 BUT NOT in df2 within the last 6 months.
+    2. Write python code to calculate the exact answer.
+    3. Return ONLY the final answer in a clear, professional sentence. 
+    4. If the user asks for a list, provide the emails clearly.
+    """
 
-    # 3. Build a strict, undeniable context payload for the LLM
-    context = []
-    if detected_source:
-        context.append(f"FILTER APPLIED: Showing data ONLY for source '{detected_source}'")
-    else:
-        context.append("FILTER: None (Showing all data)")
-        
-    context.append(f"\n--- CURRENT BATCH STATS ---")
-    context.append(f"Total Exposures in Current Batch: {len(filtered_curr)}")
-    context.append(f"Current Batch Source Breakdown: {curr_breakdown}")
-    context.append(f"Password Resets Needed (Current users NOT in global recent master data): {reset_count}")
-    
-    if reset_count > 0:
-        context.append(f"Reset Emails (first 30): {', '.join(reset_emails[:30])}")
-        
-    context.append(f"\n--- MASTER DATA STATS ---")
-    context.append(f"Total Historical Exposures: {len(filtered_mast)}")
-    context.append(f"Historical Source Breakdown: {mast_breakdown}")
+    # 3. Create the Autonomous Agent
+    agent = create_pandas_dataframe_agent(
+        llm,
+        [current_df, master_df], # Pass both dataframes
+        verbose=True,            # Set to True so you can watch it "think" in your terminal!
+        allow_dangerous_code=True, # Required because the AI is executing real Python code
+        prefix=system_prefix
+    )
 
-    prompt_data = "\n".join(context)
-    
-    # 4. Ask the LLM to answer using ONLY this context
+    # 4. Let the Agent solve the problem
     try:
-        return analysis_chain.invoke({"data": prompt_data, "query": user_query}).strip()
+        # The agent will write code, check the output, and formulate a response
+        response = agent.invoke({"input": user_query})
+        return response["output"]
     except Exception as e:
-        return f"Error analyzing data: {str(e)}"
+        return f"The agent encountered an error while thinking: {str(e)}"
 
 if __name__ == "__main__":
-    print("Dynamic App Engine Loaded.")
+    print("Agentic App Engine Loaded.")
