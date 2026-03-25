@@ -10,7 +10,7 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     
     # 1. Initialize your local LLM (Using the faster llama3.2!)
     llm = OllamaLLM(
-        model="llama3.2", 
+        model="qwen2.5-coder:7b", 
         base_url="http://localhost:11434",
         temperature=0,
         client_kwargs={"timeout": 120}
@@ -19,16 +19,15 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     # 2. Give the agent a strict persona and instructions
     # We pass BOTH dataframes as a list: df1 is current_batch, df2 is master_data
     system_prefix = """
-    You are an elite Security Data Analyst. 
-    You have been given two pandas DataFrames:
+    You are an elite Security Data Analyst working with two pandas DataFrames:
     - df1: The 'current batch' of exposed credentials (columns: email, exposure_date, source)
     - df2: The 'master data' of historical exposures (columns: email, last_exposed_date, source)
     
-    CRITICAL RULES:
-    1. A 'Password Reset' is required IF a user is in df1 BUT NOT in df2 within the last 6 months.
-    2. Write python code to calculate the exact answer.
-    3. Return ONLY the final answer in a clear, professional sentence. 
-    4. If the user asks for a list, provide the emails clearly.
+    COMPANY BUSINESS RULES:
+    - "Password Reset Needed": This means an email exists in the current batch (df1) BUT DOES NOT exist in the master data (df2).
+    - "Repeated User" / "Safe User": This means an email exists in BOTH df1 AND df2.
+    
+    Write python code to calculate the answer based on these rules. Return only the final answer.
     """
 
     # 3. Create the Autonomous Agent
