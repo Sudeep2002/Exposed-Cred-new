@@ -128,17 +128,25 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     - Provide the exact number, percentage, or summary in a clear, professional sentence.
     """
 
+# ... [Keep your system_prefix exactly the same] ...
+
     agent = create_pandas_dataframe_agent(
         llm,
         [current_df, master_df],
         verbose=True,
         allow_dangerous_code=True,
         prefix=system_prefix,
-        max_iterations=15
+        max_iterations=15,
+        handle_parsing_errors=True  # <-- FIX 1: The AI will now self-correct bad formatting!
     )
 
     try:
         response = agent.invoke({"input": user_query})
         return response["output"]
     except Exception as e:
-        return f"The agent encountered an error while analyzing this query: {str(e)}"
+        # <-- FIX 2: Secure Error Handling (No code leakage)
+        # 1. Print the raw code/error to your VS Code terminal for debugging
+        print(f"\n[SECURE LOG] Agent Error: {str(e)}\n") 
+        
+        # 2. Return a safe, sanitized message to the end-user
+        return "I encountered an internal issue analyzing that specific request. Please try rephrasing your question."
