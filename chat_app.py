@@ -130,7 +130,7 @@ else:
     
     user_query = st.chat_input("Ask a question about the current batch...")
     if user_query:
-        _handle_query(user_query, allow_reset_download=True)
+        _handle_query(user_query)
 
     for message in st.session_state.chat_history:
         st.chat_message(message["role"]).write(message["content"])
