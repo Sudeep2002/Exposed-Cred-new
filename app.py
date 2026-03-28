@@ -24,7 +24,7 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     email_matches = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', query_lower)
     
     # 2. Look for complex/analytical keywords (Send to Agent)
-    complex_keywords = ["%", "percent", "most", "least", "compare", "summary", "total", "vendor", "source", "bk", "ssc", "bitsight", "xmc"]
+    complex_keywords = ["%", "percent", "most", "least", "compare", "total", "vendor", "source", "bk", "ssc", "bitsight", "xmc"]
     is_complex = any(word in query_lower for word in complex_keywords)
 
     # 3. Look for standard action keywords (Send to Fast Lane)
