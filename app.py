@@ -121,13 +121,18 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     2. "Repeated User" / "Safe": A user's email exists in BOTH the current batch (df1) AND the master data (df2).
     3. "Source": The vendor who found the leak (e.g., BK, SSC, Bitsight, XMC). 
 
+    CRITICAL FORMATTING RULES FOR EXECUTING CODE:
+    To run pandas code, you MUST use the exact format below. Do NOT use "Action: print(...)".
+    
+    Thought: [Explain what you are about to do]
+    Action: python_repl_ast
+    Action Input: [Your exact pandas code here, e.g., df1['source'].value_counts()]
+    
     FINAL OUTPUT RULES:
-    - Write exact pandas code to find the answer. Always lowercase and strip emails before comparing: df['email'].astype(str).str.lower().str.strip()
-    - When filtering by a source/vendor, ensure case-insensitive string matching (e.g., str.lower() == 'bk').
-    - DO NOT output your thought process or the raw python code.
-    - Provide the exact number, percentage, or summary in a clear, professional sentence.
+    - Always lowercase and strip emails before comparing: df['email'].astype(str).str.lower().str.strip()
+    - When filtering by a source/vendor, ensure case-insensitive string matching.
+    - Provide the exact number, percentage, or summary in a clear, professional sentence based on the Observation.
     """
-
 # ... [Keep your system_prefix exactly the same] ...
 
     agent = create_pandas_dataframe_agent(
