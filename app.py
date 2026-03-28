@@ -1,62 +1,144 @@
 import pandas as pd
+import re
 from langchain_ollama import OllamaLLM
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 
 def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataFrame, **kwargs) -> str:
     """
-    Autonomous Agent Engine: 
-    The AI will write its own Pandas code to find the answer!
+    Hybrid Router: Enterprise SOC Edition (Full Coverage)
     """
+    query_lower = user_query.lower()
+
+    # Clean emails once for all comparisons
+    current_df['email_clean'] = current_df['email'].astype(str).str.lower().str.strip()
+    master_df['email_clean'] = master_df['email'].astype(str).str.lower().str.strip()
     
-    # 1. Initialize your local LLM (Using the faster llama3.2!)
+    curr_emails = current_df['email_clean']
+    mast_emails = master_df['email_clean']
+
+    # ==========================================
+    # 🚥 THE ROUTER: Categorize the Question
+    # ==========================================
+    
+    # 1. Look for explicit email addresses in the chat
+    email_matches = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', query_lower)
+    
+    # 2. Look for complex/analytical keywords (Send to Agent)
+    complex_keywords = ["%", "percent", "most", "least", "compare", "summary", "total", "vendor", "source", "bk", "ssc", "bitsight", "xmc"]
+    is_complex = any(word in query_lower for word in complex_keywords)
+
+    # 3. Look for standard action keywords (Send to Fast Lane)
+    is_asking_reset = any(word in query_lower for word in ["reset", "new exposure", "not in master", "action"])
+    is_asking_analysis = any(word in query_lower for word in ["repeat", "reappear", "history", "analyze", "safe", "already known"])
+
+    # ==========================================
+    # ⚡ THE FAST LANE (Instant Pandas Math)
+    # ==========================================
+    
+    # CATEGORY 4: Single User Lookup
+    if email_matches and not is_complex:
+        print("🚥 ROUTER: Taking Fast Lane (Single User Lookup)...")
+        target_email = email_matches[0]
+        in_curr = target_email in curr_emails.values
+        in_mast = target_email in mast_emails.values
+        
+        if in_curr and not in_mast:
+            return f"🚨 **ACTION REQUIRED:** The user `{target_email}` is a NEW exposure in the current batch and requires a password reset."
+        elif in_curr and in_mast:
+            history = master_df[master_df['email_clean'] == target_email]
+            sources = ", ".join(history['source'].dropna().astype(str).unique())
+            return f"🛡️ **SAFE / REPEATED:** The user `{target_email}` is in the current batch, but they are already known in the master database. (Previous sources: {sources})."
+        elif not in_curr and in_mast:
+            return f"ℹ️ **HISTORICAL ONLY:** The user `{target_email}` is NOT in the current batch, but they do exist in the historical master data."
+        else:
+            return f"✅ **NOT FOUND:** The user `{target_email}` was not found in any of the uploaded data."
+
+    # CATEGORY 1 & 2: Standard Resets and Repeats
+    if not is_complex and (is_asking_reset or is_asking_analysis):
+        print("🚥 ROUTER: Taking the Fast Lane (Pandas Rules)...")
+        
+        # CATEGORY 1: The Reset Logic
+        if is_asking_reset:
+            resets_df = current_df[~curr_emails.isin(mast_emails)]
+            count = len(resets_df)
+            
+            if any(w in query_lower for w in ["who", "list", "show"]):
+                emails = "\n- ".join(resets_df['email'].tolist())
+                return f"There are {count} users who require a password reset (New Exposures). Here is the list:\n- {emails}"
+            return f"There are {count} users who require a password reset (New Exposures)."
+            
+        # CATEGORY 2: The Repeated Analysis Logic
+        if is_asking_analysis:
+            repeated_emails = curr_emails[curr_emails.isin(mast_emails)].unique()
+            count = len(repeated_emails)
+            
+            if count == 0:
+                return "There are no repeated users in this batch."
+            
+            if any(w in query_lower for w in ["who", "list", "analyze", "history"]):
+                curr_repeats = current_df[current_df['email_clean'].isin(repeated_emails)]
+                mast_repeats = master_df[master_df['email_clean'].isin(repeated_emails)]
+                combined_repeats = pd.concat([curr_repeats, mast_repeats])
+                
+                analysis = combined_repeats.groupby('email').agg(
+                    total_appearances=('email', 'count'),
+                    sources=('source', lambda x: ", ".join(x.dropna().astype(str).unique())),
+                    dates=('exposure_date', lambda x: ", ".join(x.dropna().astype(str).unique()))
+                ).reset_index()
+                
+                report_lines = [f"Found {count} repeated users. Here is their historical analysis:\n"]
+                for _, row in analysis.iterrows():
+                    report_lines.append(f"• **{row['email']}**")
+                    report_lines.append(f"  - Times Exposed: {row['total_appearances']}")
+                    report_lines.append(f"  - Found in Sources: {row['sources']}")
+                    report_lines.append(f"  - Dates of Exposure: {row['dates']}\n")
+                
+                return "\n".join(report_lines)
+                
+            return f"There are {count} repeated/reappearing users in this batch. Ask me to 'analyze repeated users' to see their full history."
+
+    # ==========================================
+    # 🧠 THE SMART LANE (Autonomous Agent)
+    # ==========================================
+    print("🚥 ROUTER: Taking the Smart Lane (AI Agent)...")
+    
+    # CATEGORY 3 & 5: Complex Analytics, Vendor Filtering, and Summaries
     llm = OllamaLLM(
-        model="qwen2.5-coder:7b", 
+        model="llama3.2", 
         base_url="http://localhost:11434",
         temperature=0,
         client_kwargs={"timeout": 120}
     )
 
-    # 2. Give the agent a strict persona and instructions
-    # We pass BOTH dataframes as a list: df1 is current_batch, df2 is master_data
     system_prefix = """
     You are an elite Security Data Analyst managing exposed employee credentials. 
     You have access to two pandas DataFrames:
     - df1: The 'current batch' of recent exposures (Columns: email, exposure_date, source)
-    - df2: The 'master data' of all historical exposures (Columns: email, exposure_date, source)
+    - df2: The 'master data' of historical exposures (Columns: email, exposure_date, source)
 
-    COMPANY BUSINESS DEFINITIONS (THE DICTIONARY):
-    1. "Password Reset Needed" (or "New Exposure"): This strictly means a user's email exists in the current batch (df1) BUT DOES NOT exist in the master data (df2).
-    2. "Repeated User" (or "Safe / Already Known"): This strictly means a user's email exists in BOTH the current batch (df1) AND the master data (df2).
-    3. "Source": The vendor or system that discovered the exposure (e.g., 'BK', 'SSC', 'Bitsight', 'XMC').
-
-    DATA HANDLING BEST PRACTICES:
-    - When comparing emails between DataFrames, always ensure you lowercase and strip whitespace from the strings first to avoid false mismatches (e.g., df['email'].str.lower().str.strip()).
-    - If filtering by a specific 'source', ensure case-insensitive matching.
+    COMPANY BUSINESS DEFINITIONS:
+    1. "Password Reset" / "New": A user's email exists in the current batch (df1) BUT NOT in the master data (df2).
+    2. "Repeated User" / "Safe": A user's email exists in BOTH the current batch (df1) AND the master data (df2).
+    3. "Source": The vendor who found the leak (e.g., BK, SSC, Bitsight, XMC). 
 
     FINAL OUTPUT RULES:
-    - Write and execute the exact pandas code to find the answer.
-    - DO NOT output your thought process or the raw python code to the user.
-    - If asked for a count, provide the exact number in a clear, professional sentence.
-    - If asked for a list of users, provide the exact list of emails clearly formatted.
-    - If the requested data does not exist, politely state that based on the current data.
+    - Write exact pandas code to find the answer. Always lowercase and strip emails before comparing: df['email'].astype(str).str.lower().str.strip()
+    - When filtering by a source/vendor, ensure case-insensitive string matching (e.g., str.lower() == 'bk').
+    - DO NOT output your thought process or the raw python code.
+    - Provide the exact number, percentage, or summary in a clear, professional sentence.
     """
 
-    # 3. Create the Autonomous Agent
     agent = create_pandas_dataframe_agent(
         llm,
-        [current_df, master_df], # Pass both dataframes
-        verbose=True,            # Set to True so you can watch it "think" in your terminal!
-        allow_dangerous_code=True, # Required because the AI is executing real Python code
-        prefix=system_prefix
+        [current_df, master_df],
+        verbose=True,
+        allow_dangerous_code=True,
+        prefix=system_prefix,
+        max_iterations=15
     )
 
-    # 4. Let the Agent solve the problem
     try:
-        # The agent will write code, check the output, and formulate a response
         response = agent.invoke({"input": user_query})
         return response["output"]
     except Exception as e:
-        return f"The agent encountered an error while thinking: {str(e)}"
-
-if __name__ == "__main__":
-    print("Agentic App Engine Loaded.")
+        return f"The agent encountered an error while analyzing this query: {str(e)}"
