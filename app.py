@@ -28,9 +28,6 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     curr_df = curr_df.groupby(curr_df.columns, axis=1).first()
     mast_df = mast_df.groupby(mast_df.columns, axis=1).first()
 
-    if 'valid_user' in curr_df.columns:
-        curr_df = curr_df[curr_df['valid_user'].astype(str).str.lower().str.strip() == 'true']
-
     if 'reset' not in mast_df.columns:
         mast_df['reset'] = 'NA'
 
