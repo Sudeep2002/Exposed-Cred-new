@@ -114,8 +114,15 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     # CATEGORY 2: The Repeated Analysis Logic
     if not is_complex and is_asking_analysis:
         print("🚥 ROUTER: Running Repeated Analysis...")
-        repeated_emails = curr_df['email_clean'][curr_df['email_clean'].isin(mast_df['email_clean'])].unique()
+        
+        # 🚀 THE FIX: Use Python sets instead of Pandas .isin() to bypass the 2D Buffer error
+        curr_emails = set(curr_df['email_clean'].dropna().tolist())
+        mast_emails = set(mast_df['email_clean'].dropna().tolist())
+        
+        # Find the intersection (emails that exist in both sets)
+        repeated_emails = list(curr_emails.intersection(mast_emails))
         count = len(repeated_emails)
+        
         vendor_text = f" from {detected_vendor.upper()}" if detected_vendor else ""
         
         if count == 0:
