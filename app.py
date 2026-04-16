@@ -185,7 +185,7 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     - Provide exact numbers, percentages, or summaries clearly. Do not output raw python code to the user.
     """
 
-    agent = create_pandas_dataframe_agent(llm, [curr_df, mast_df], verbose=True, allow_dangerous_code=True, prefix=system_prefix, max_iterations=4, early_stopping_method="generate", handle_parsing_errors=True)
+    agent = create_pandas_dataframe_agent(llm, [curr_df, mast_df], verbose=True, allow_dangerous_code=True, prefix=system_prefix, max_iterations=4, handle_parsing_errors=True)
 
     try:
         return agent.invoke({"input": user_query})["output"]
