@@ -169,19 +169,26 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     1. NEVER compare two columns directly with `==`. ALWAYS use `.isin()`.
     2. Do not hallucinate column names.
 
-    EXAMPLES OF GOOD CODE:
-    - User: "What percentage of users are from Bitsight?"
-      Action Input: `len(df1[df1['source'].str.lower() == 'bitsight']) / len(df1) * 100`
+    EXAMPLES OF THE EXACT FORMAT YOU MUST USE:
     
-    - User: "Compare the number of users from BK vs SSC."
-      Action Input: `df1['source'].value_counts()`
-
-    To run pandas code, use the exact format below:
-    Thought: [Explain your plan]
+    Question: "What percentage of users are from Bitsight?"
+    Thought: I need to count Bitsight users and divide by the total.
     Action: python_repl_ast
-    Action Input: [Your exact pandas code here]
+    Action Input: len(df1[df1['source'].astype(str).str.lower() == 'bitsight']) / len(df1) * 100
+    Observation: 25.0
+    Thought: I now know the final answer.
+    Final Answer: 25.0% of the users in the current batch are from Bitsight.
     
+    Question: "Compare the number of users from BK vs SSC."
+    Thought: I need to get the value counts for the source column.
+    Action: python_repl_ast
+    Action Input: df1['source'].value_counts()
+    Observation: BK: 40, SSC: 20
+    Thought: I now know the final answer.
+    Final Answer: There are 40 users from BK and 20 from SSC.
+
     FINAL OUTPUT RULES:
+    - When you have the result from the observation, you MUST output 'Thought: I now know the final answer.' followed by 'Final Answer: [your response]'.
     - Provide exact numbers, percentages, or summaries clearly. Do not output raw python code to the user.
     """
 
