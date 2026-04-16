@@ -22,7 +22,7 @@ def _get_analysis_chain():
     global _analysis_chain
     if _analysis_chain is None:
         llm = OllamaLLM(
-            model="llama3.2",
+            model="qwen2.5-coder:7b",
             base_url="http://localhost:11434",
             temperature=0,
             # INCREASED TIMEOUT: Gives your local machine plenty of time to respond

@@ -166,19 +166,26 @@ def process_query(user_query: str, current_df: pd.DataFrame, master_df: pd.DataF
     - df2: The 'master data' of historical exposures.
 
     CRITICAL PANDAS RULES (DO NOT FAIL THESE):
-    1. NEVER compare two columns directly with `==`. 
-    2. ALWAYS use `.isin()` to find matches.
-    3. To run pandas code, use the exact format below:
+    1. NEVER compare two columns directly with `==`. ALWAYS use `.isin()`.
+    2. Do not hallucinate column names.
+
+    EXAMPLES OF GOOD CODE:
+    - User: "What percentage of users are from Bitsight?"
+      Action Input: `len(df1[df1['source'].str.lower() == 'bitsight']) / len(df1) * 100`
     
+    - User: "Compare the number of users from BK vs SSC."
+      Action Input: `df1['source'].value_counts()`
+
+    To run pandas code, use the exact format below:
     Thought: [Explain your plan]
     Action: python_repl_ast
     Action Input: [Your exact pandas code here]
     
     FINAL OUTPUT RULES:
-    - Provide exact numbers, percentages, or summaries clearly. Do not output raw python code.
+    - Provide exact numbers, percentages, or summaries clearly. Do not output raw python code to the user.
     """
 
-    agent = create_pandas_dataframe_agent(llm, [curr_df, mast_df], verbose=True, allow_dangerous_code=True, prefix=system_prefix, max_iterations=15, handle_parsing_errors=True)
+    agent = create_pandas_dataframe_agent(llm, [curr_df, mast_df], verbose=True, allow_dangerous_code=True, prefix=system_prefix, max_iterations=4, early_stopping_method="generate", handle_parsing_errors=True)
 
     try:
         return agent.invoke({"input": user_query})["output"]
